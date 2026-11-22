@@ -3,6 +3,7 @@ import { buildTradePlans, coordinateTradePlans } from './trade-plans.ts';
 import { buildConfluence } from './confluence.ts';
 import type { ConfluenceContext, ConfluenceDirection } from './confluence-types';
 import { accelerationArea, computeVacc, VACC_DEFAULTS, velocityPeak } from './vacc.ts';
+import { buildNaturalStrokes } from './natural-strokes.ts';
 
 type Direction = 'up' | 'down';
 type IndexedCandle = Candle & { index: number };
@@ -293,7 +294,9 @@ function atr(bars:IndexedCandle[]) {
   return last.reduce((sum,b,i)=>sum+Math.max(b.high-b.low,Math.abs(b.high-(i?last[i-1].close:b.open)),Math.abs(b.low-(i?last[i-1].close:b.open))),0)/last.length;
 }
 function core(bars:IndexedCandle[], mode:'new'|'old') {
-  const merged=mergeIndexed(bars),fractals=findFractals(merged),strokes=buildPens(fractals,mode),segments=buildSegments(strokes);
+  // 'new' = 自然笔 (Natural Chan); 'old' keeps the classic lesson-62 pen for comparison.
+  const pens=mode==='new'?buildNaturalStrokes(bars):(()=>{const fractals=findFractals(mergeIndexed(bars));return {fractals,strokes:buildPens(fractals,mode)};})();
+  const fractals=pens.fractals,strokes=pens.strokes,segments=buildSegments(strokes);
   const {centers,signals}=buildCenters(segments),vacc=computeVacc(bars,VACC_DEFAULTS);
   const current=bars[bars.length-1],last=vacc[vacc.length-1];
   const recent=strokes.filter(x=>x.confirmed).slice(-1)[0];
@@ -490,5 +493,5 @@ export function analyze(candles:Candle[], options:AnalysisOptions={}):Analysis {
   if(candles.some(x=>x.closed===false))warnings.push('当前未收盘K线仅供价格展示，已排除出结构、评分与历史统计。');
   if(invalid)warnings.push(`已排除 ${invalid} 根无效、重复或乱序K线；检查数据来源。`);
   if(s.strokes.length<3)warnings.push('当前窗口有效笔不足；可增加历史范围或切换周期。');
-  return {input:confluence?.input,fractals:s.fractals.map(f=>({index:f.index,time:f.time,price:f.price,type:f.type,confirmedAt:f.confirmedAt})),strokes:s.strokes,segments:s.segments,centers:s.centers,signals:s.signals.sort((a,b)=>a.index-b.index),vacc:s.vacc,vaccParams:{...VACC_DEFAULTS},analyzedThrough:bars.at(-1)?.time??0,scenarios:scenarios(bars,s),tradeSetups:tradeSetups(bars,s),tradePlans,planSession,decision,confluence,bias:s.bias,calibration,warnings,ruleVersion:`chan-experimental-1.5 · VAcc ${VACC_DEFAULTS.n}/${VACC_DEFAULTS.m} · ${mode==='new'?'2007-09-18新笔':'第62课旧笔'} · 仅已收盘K线`};
+  return {input:confluence?.input,fractals:s.fractals.map(f=>({index:f.index,time:f.time,price:f.price,type:f.type,confirmedAt:f.confirmedAt})),strokes:s.strokes,segments:s.segments,centers:s.centers,signals:s.signals.sort((a,b)=>a.index-b.index),vacc:s.vacc,vaccParams:{...VACC_DEFAULTS},analyzedThrough:bars.at(-1)?.time??0,scenarios:scenarios(bars,s),tradeSetups:tradeSetups(bars,s),tradePlans,planSession,decision,confluence,bias:s.bias,calibration,warnings,ruleVersion:`chan-experimental-1.5 · VAcc ${VACC_DEFAULTS.n}/${VACC_DEFAULTS.m} · ${mode==='new'?'自然笔':'第62课旧笔'} · 仅已收盘K线`};
 }

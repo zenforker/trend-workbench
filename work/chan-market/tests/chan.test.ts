@@ -56,11 +56,13 @@ test('feature-sequence confirmation is symmetric for downward segments',()=>{
   assert.equal(gap[0].direction,'down');assert.equal(gap[0].to.price,15);
   assert.equal(gap[0].confirmedAt,60);
 });
-test('same-type stronger fractal revises the candidate while the final pen stays provisional',()=>{
+test('natural strokes: every 3-bar move with two new extremes and separated zones is a stroke; only the last stays provisional',()=>{
   const prices=[20,18,15,12,10,12,14,16,20,18,17,19,22,20,18,16,13,10,8,10,12,14,17,21,24,22,20];
   const a=analyze(prices.map((v,i)=>bar(i,v-.1,v+.1,v)));
-  assert.deepEqual(a.strokes.map(x=>[x.from.index,x.to.index,x.confirmed]),[[4,12,true],[12,18,true],[18,24,false]]);
-  assert.equal(a.strokes[0].confirmedAt,19);
+  assert.deepEqual(a.strokes.map(x=>[x.from.index,x.to.index,x.confirmed]),[[0,4,true],[4,8,true],[8,10,true],[10,12,true],[12,18,true],[18,24,true],[24,26,false]]);
+  assert.equal(a.strokes[0].confirmedAt,6);
+  const old=analyze(prices.map((v,i)=>bar(i,v-.1,v+.1,v)),{penMode:'old'});
+  assert.ok(old.strokes.length<a.strokes.length,'classic old pens remain available for comparison');
 });
 test('unfinished latest candle cannot influence structures, bias, or empirical frequencies',()=>{
   const c=waves(220),base=analyze(c);
