@@ -5,3 +5,6 @@ Copyright 2026 DeFi狙击手
 讨论社群       https://t.me/jujishou9527
 
 Third-party software distributed with the desktop packages retains its own licenses.
+
+Modifications in this fork (2026): VAcc (velocity/acceleration, Scott Cong) replaces MACD
+in the analysis engine, chart, confluence evidence and divergence signals.

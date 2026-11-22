@@ -1,24 +1,26 @@
 import type { Candle, Interval, Market } from './market-types';
-import type { AnalysisInput, Confluence, ConfluenceContext, ConfluenceDirection, ConfluenceEvidence, ConfluenceSide, HigherConfluence, MacdConfluence, VolumeConfluence } from './confluence-types';
+import type { AnalysisInput, Confluence, ConfluenceContext, ConfluenceDirection, ConfluenceEvidence, ConfluenceSide, HigherConfluence, VaccConfluence, VolumeConfluence } from './confluence-types';
+import type { VaccPoint } from './vacc';
 import { candleAvailableAt, eligibleHigherCandles, exchangeClock, higherInterval } from './timeframe-context.ts';
 
-type MacdPoint = { time: number; dif: number; dea: number; hist: number };
 const intraday = (interval: Interval) => !['1d', '1w', '1M'].includes(interval);
 const direction = (value: number, tolerance = 0): ConfluenceDirection => value > tolerance ? 'long' : value < -tolerance ? 'short' : 'neutral';
 
-/** MACD is one correlated evidence family. Zero-axis position and histogram
- * change describe its state; they are never awarded separate votes or points. */
-export function evaluateMacdConfluence(points: MacdPoint[], price: number): MacdConfluence {
-  const valid = points.filter(p => [p.time, p.dif, p.dea, p.hist].every(Number.isFinite));
-  const last = valid.at(-1), earlier = valid.slice(-4, -1);
-  const empty: MacdConfluence = { status: 'insufficient', direction: 'neutral', momentum: 'flat', dif: last?.dif ?? null, dea: last?.dea ?? null, hist: last?.hist ?? null, samples: valid.length };
-  if (valid.length < 35 || !last || !Number.isFinite(price) || price <= 0) return empty;
-  const tolerance = Math.max(price * 0.00001, Number.EPSILON);
-  const trend = direction(last.dif, tolerance), impulse = direction(last.hist, tolerance);
-  const average = earlier.reduce((sum, p) => sum + Math.abs(p.hist), 0) / earlier.length;
-  const change = Math.abs(last.hist) - average;
-  const momentum = change > tolerance ? 'strengthening' : change < -tolerance ? 'weakening' : 'flat';
-  return { ...empty, status: 'ready', direction: trend === impulse ? trend : 'neutral', momentum };
+/** VAcc is one evidence family (never separate votes). Direction requires the
+ * acceleration-confirmed side AND Vel still on that side of zero; an
+ * unconfirmed Vel zero-cross is reported as pending. Momentum reads acc
+ * relative to Vel: same sign = strengthening, opposite = weakening. */
+export function evaluateVaccConfluence(points: readonly VaccPoint[], price: number): VaccConfluence {
+  const valid = points.filter(p => [p.time, p.vel, p.acc].every(Number.isFinite));
+  const last = valid.at(-1);
+  const empty: VaccConfluence = { status: 'insufficient', direction: 'neutral', pending: last?.pending ?? null, momentum: 'flat', vel: last?.vel ?? null, acc: last?.acc ?? null, samples: valid.length };
+  if (valid.length < 21 || !last || !Number.isFinite(price) || price <= 0) return empty;
+  const tolerance = Math.max(price * 0.000001, Number.EPSILON);
+  const side = direction(last.vel, tolerance);
+  const confirmed: ConfluenceDirection = last.state !== null && last.state === side ? last.state : 'neutral';
+  const momentum = Math.abs(last.acc) <= tolerance * 0.1 || side === 'neutral' ? 'flat'
+    : Math.sign(last.acc) === Math.sign(last.vel) ? 'strengthening' : 'weakening';
+  return { ...empty, status: 'ready', direction: confirmed, momentum };
 }
 
 /** Stock intraday bars compare only the same exchange-local clock slot on
@@ -122,12 +124,12 @@ export function evaluateHigherConfluence(context: ConfluenceContext, asOf: numbe
   return { ...result, status: 'ready', direction: deriveDirection(bars) };
 }
 
-export function assessConfluenceSide(side: 'long' | 'short', macd: MacdConfluence, volume: VolumeConfluence, higher: HigherConfluence): ConfluenceSide {
-  const m: ConfluenceEvidence = macd.status !== 'ready' ? { factor:'macd',status:'insufficient',code:'macd-insufficient' }
-    : macd.direction === 'neutral' ? { factor:'macd',status:'mixed',code:'macd-mixed' }
-      : macd.direction !== side ? { factor:'macd',status:'opposed',code:'macd-opposed' }
-        : macd.momentum === 'weakening' ? { factor:'macd',status:'mixed',code:'macd-weakening' }
-          : { factor:'macd',status:'aligned',code:'macd-aligned' };
+export function assessConfluenceSide(side: 'long' | 'short', vacc: VaccConfluence, volume: VolumeConfluence, higher: HigherConfluence): ConfluenceSide {
+  const m: ConfluenceEvidence = vacc.status !== 'ready' ? { factor:'vacc',status:'insufficient',code:'vacc-insufficient' }
+    : vacc.direction === 'neutral' ? { factor:'vacc',status:'mixed',code:vacc.pending ? 'vacc-pending' : 'vacc-mixed' }
+      : vacc.direction !== side ? { factor:'vacc',status:'opposed',code:'vacc-opposed' }
+        : vacc.momentum === 'weakening' ? { factor:'vacc',status:'mixed',code:'vacc-weakening' }
+          : { factor:'vacc',status:'aligned',code:'vacc-aligned' };
   const v: ConfluenceEvidence = volume.status !== 'ready' ? { factor:'volume',status:'insufficient',code:'volume-insufficient' }
     : volume.participation === 'low' ? { factor:'volume',status:'mixed',code:'volume-low' }
       : volume.participation !== 'expanded' || volume.priceDirection === 'neutral' ? { factor:'volume',status:'mixed',code:'volume-normal' }
@@ -145,13 +147,13 @@ export function assessConfluenceSide(side: 'long' | 'short', macd: MacdConfluenc
   return { status, evidence };
 }
 
-export function buildConfluence(candles: Candle[], macdPoints: MacdPoint[], context: ConfluenceContext, deriveHigherDirection: (candles: Candle[]) => ConfluenceDirection): Confluence {
+export function buildConfluence(candles: Candle[], vaccPoints: readonly VaccPoint[], context: ConfluenceContext, deriveHigherDirection: (candles: Candle[]) => ConfluenceDirection): Confluence {
   const bars = candles.filter(c => c.closed !== false), last = bars.at(-1);
   const asOf = last ? candleAvailableAt(last, context.market, context.interval, context.source) : 0;
-  const macd = evaluateMacdConfluence(macdPoints, last?.close ?? 0), volume = evaluateRelativeVolume(bars, context);
+  const vacc = evaluateVaccConfluence(vaccPoints, last?.close ?? 0), volume = evaluateRelativeVolume(bars, context);
   const higher = evaluateHigherConfluence(context, asOf, deriveHigherDirection);
   const { market, interval, symbol, source, adjustment } = context;
   const input: AnalysisInput = { market, interval, symbol, source, adjustment, count:bars.length,
     firstTime:bars[0]?.time ?? null, lastBar:last ? {...last} : null };
-  return { advisory:true,input,asOf,macd,volume,higher,long:assessConfluenceSide('long',macd,volume,higher),short:assessConfluenceSide('short',macd,volume,higher) };
+  return { advisory:true,input,asOf,vacc,volume,higher,long:assessConfluenceSide('long',vacc,volume,higher),short:assessConfluenceSide('short',vacc,volume,higher) };
 }

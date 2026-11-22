@@ -49,7 +49,7 @@ test('empty watchlist creates neither a timer nor a request',()=>{
   monitor.start();assert.equal(calls,0);assert.equal(schedule.tasks.size,0);monitor.stop();
 });
 
-test('watch price, MACD, confluence and forecast share the provider snapshot cutoff',async()=>{
+test('watch price, VAcc, confluence and forecast share the provider snapshot cutoff',async()=>{
   const schedule=clock(),states:WatchRow[]=[],snapshots:WatchSnapshot[]=[];
   const feed=await response('T0USDT').json() as MarketData;
   const last=feed.candles.at(-1)!;
@@ -62,7 +62,8 @@ test('watch price, MACD, confluence and forecast share the provider snapshot cut
   assert.equal(snapshots.length,1);
   const {data,analysis,forecast}=snapshots[0],eligible=feed.candles.at(-3)!;
   assert.equal(data.candles.at(-1)?.time,eligible.time);
-  assert.equal(analysis.macd.at(-1)?.time,eligible.time);
+  assert.equal(analysis.vacc.at(-1)?.time,eligible.time);
+  assert.equal(analysis.analyzedThrough,eligible.time);
   assert.equal(forecast.asOf,now/1000);assert.equal(forecast.referencePrice,eligible.close);
   assert.equal(analysis.confluence?.asOf,forecast.structureAsOf);
   assert.equal(states.at(-1)?.price,eligible.close);

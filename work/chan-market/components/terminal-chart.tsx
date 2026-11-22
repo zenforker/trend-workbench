@@ -105,9 +105,11 @@ export default function TerminalChart({candles, analysis, layers, symbol, interv
   }
   const maxVol = Math.max(...visible.map(c=>c.volume),1);
   const candleIndices=new Map(candles.map((c,i)=>[c.time,i]));
-  const macd = (analysis?.macd||[]).filter(m=>{const i=candleIndices.get(m.time);return i!==undefined&&i>=start&&i<end;});
-  const maxMacd = Math.max(...macd.flatMap(m=>[Math.abs(m.hist),Math.abs(m.dif),Math.abs(m.dea)]),.00001);
-  const my = (v:number)=>MID-v/maxMacd*MP;
+  const vacc = (analysis?.vacc||[]).filter(m=>{const i=candleIndices.get(m.time);return i!==undefined&&i>=start&&i<end;});
+  // Vel (line) and acc (bars) have different magnitudes; each is scaled to the pane, sharing the zero axis.
+  const maxVel = Math.max(...vacc.map(m=>Math.abs(m.vel)),1e-12), maxAcc = Math.max(...vacc.map(m=>Math.abs(m.acc)),1e-12);
+  const vy = (v:number)=>MID-v/maxVel*MP, ay = (v:number)=>MID-v/maxAcc*MP;
+  const vaccText = (v:number)=>Number(v.toPrecision(4)).toString();
   const selected = hover ? candles[hover.index] : visible.at(-1);
   const selectedIndex=hover?.index??end-1;
   const last=candles.at(-1);
@@ -115,7 +117,7 @@ export default function TerminalChart({candles, analysis, layers, symbol, interv
     ?hi-(hover.y-TOP)/PH*(hi-lo):null;
   const hoverPriceLabel=hoverPrice===null?'':priceText(hoverPrice);
   const hoverPriceFontSize=Math.min(13,(RIGHT-16)/Math.max(1,hoverPriceLabel.length*.62));
-  const selectedMacd=analysis?.macd.find(m=>m.time===candles[selectedIndex]?.time);
+  const selectedVacc=analysis?.vacc.find(m=>m.time===candles[selectedIndex]?.time);
   const conditionIndex=candles.findLastIndex(c=>c.closed!==false);
   const setupX=W-RIGHT-setupWidth+28;
   const rawLevels=forecastSide?[
@@ -152,7 +154,7 @@ export default function TerminalChart({candles, analysis, layers, symbol, interv
       <button aria-label={t('缩小图表','Zoom out')} title={t('缩小','Zoom out')} onClick={()=>setCount(c=>Math.min(600,c+40))}><Minus size={14}/></button><span>{Math.min(count,candles.length)} {t('根','bars')}</span><button aria-label={t('放大图表','Zoom in')} title={t('放大','Zoom in')} onClick={()=>setCount(c=>Math.max(40,c-30))}><Plus size={14}/></button><button title={t('回到最新','Latest')} aria-label={t('图表回到最新','Return chart to latest')} onClick={()=>{setBack(0);setCount(160);}}><ScanLine size={14}/></button>
     </div>
     <div className="chart-scroll" ref={scrollRef} tabIndex={0} role="region" aria-label={t('K线图区域，可横向滚动','Candlestick chart; scroll horizontally')}>
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{width:W,height:H}} role="img" aria-label={`${symbol} ${interval} ${t('K线、缠论结构、后续点位预判及MACD图，拖动查看历史，滚轮缩放','candlesticks, Chan structures, forward reference levels and MACD; drag to pan, scroll to zoom')}`} className="terminal-chart" onPointerMove={position} onPointerLeave={()=>{setHover(null);drag.current=null;}} onPointerDown={e=>{drag.current={x:e.clientX,back};e.currentTarget.setPointerCapture(e.pointerId);}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{setHover(null);drag.current=null;}} onWheel={e=>{setCount(c=>Math.max(40,Math.min(600,c+(e.deltaY>0?15:-15))));}}>
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{width:W,height:H}} role="img" aria-label={`${symbol} ${interval} ${t('K线、缠论结构、后续点位预判及VAcc图，拖动查看历史，滚轮缩放','candlesticks, Chan structures, forward reference levels and VAcc; drag to pan, scroll to zoom')}`} className="terminal-chart" onPointerMove={position} onPointerLeave={()=>{setHover(null);drag.current=null;}} onPointerDown={e=>{drag.current={x:e.clientX,back};e.currentTarget.setPointerCapture(e.pointerId);}} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{setHover(null);drag.current=null;}} onWheel={e=>{setCount(c=>Math.max(40,Math.min(600,c+(e.deltaY>0?15:-15))));}}>
       <defs><clipPath id="price-clip"><rect x="0" y={TOP} width={W-RIGHT} height={PH+8}/></clipPath><clipPath id={centerClipId}><rect data-testid="chart-center-clip" x={LEFT} y={TOP} width={usable} height={PH}/></clipPath><linearGradient id="watermark-grad"><stop stopColor="#223039"/><stop offset="1" stopColor="#122129"/></linearGradient></defs>
       <rect width={W} height={H} fill="#0e181e"/>
       {Array.from({length:6},(_,i)=>{const v=hi-(hi-lo)*i/5,py=y(v);return <g key={i}><line x1={LEFT} x2={W-RIGHT} y1={py} y2={py} stroke="#2b3b45" strokeWidth=".7" strokeDasharray="2 4"/><text x={W-RIGHT+10} y={py+4} fill="#afc0c9" fontSize="12" fontFamily="monospace">{priceText(v)}</text></g>;})}
@@ -207,11 +209,11 @@ export default function TerminalChart({candles, analysis, layers, symbol, interv
       {last&&back===0&&(hoverPrice===null||!hover||Math.abs(y(last.close)-hover.y)>26)&&<g><rect x={W-RIGHT} y={y(last.close)-12} width={RIGHT} height="24" rx="2" fill={last.close>=last.open?'#1d7762':'#9b424d'}/><text x={W-RIGHT+8} y={y(last.close)+4} fill="#fff" fontSize="13" fontFamily="monospace">{priceText(last.close)}</text></g>}
       <line x1="0" x2={W} y1="452" y2="452" stroke="#27343c"/>
       {visible.map((c,i)=><rect key={c.time} x={x(i+start)-Math.min(8,step*.68)/2} y={VOL-c.volume/maxVol*25} width={Math.max(1,Math.min(8,step*.68))} height={c.volume/maxVol*25} fill={c.close>=c.open?'#42d6ab':'#f4777c'} fillOpacity=".18"/>)}
-      <text x="18" y="474" fill="#bacbd2" fontSize="12">MACD 12 / 26 / 9</text>
-      {selectedMacd&&<text x="160" y="474" fill="#e5c78c" fontSize="12" fontFamily="monospace">DIF {selectedMacd.dif.toFixed(2)}　<tspan fill="#a5c6ee">DEA {selectedMacd.dea.toFixed(2)}</tspan></text>}
+      <text x="18" y="474" fill="#bacbd2" fontSize="12">VAcc {analysis?.vaccParams.n??30} / {analysis?.vaccParams.m??7}</text>
+      {selectedVacc&&<text x="160" y="474" fill="#e5c78c" fontSize="12" fontFamily="monospace">Vel {vaccText(selectedVacc.vel)}　<tspan fill={selectedVacc.acc>=0?'#42d6ab':'#f4777c'}>Acc {vaccText(selectedVacc.acc)}</tspan>{selectedVacc.state&&<tspan fill="#a5c6ee">　{selectedVacc.state==='long'?t('确认多','Confirmed long'):t('确认空','Confirmed short')}</tspan>}{selectedVacc.pending&&<tspan fill="#8fa3ad">　{selectedVacc.pending==='long'?t('候选多','Long candidate'):t('候选空','Short candidate')}</tspan>}</text>}
       <line x1={LEFT} x2={W-RIGHT} y1={MID} y2={MID} stroke="#293941" strokeDasharray="2 4"/>
-      {macd.map(m=><rect key={m.time} x={x(candleIndices.get(m.time)!)-Math.max(1,step*.55)/2} y={Math.min(my(m.hist),MID)} width={Math.max(1,step*.55)} height={Math.max(.4,Math.abs(my(m.hist)-MID))} fill={m.hist>=0?'#42d6ab':'#f4777c'} opacity=".65"/>)}
-      <polyline points={macd.map(m=>`${x(candleIndices.get(m.time)!)},${my(m.dif)}`).join(' ')} stroke="#d3b77e" fill="none" strokeWidth="1"/><polyline points={macd.map(m=>`${x(candleIndices.get(m.time)!)},${my(m.dea)}`).join(' ')} stroke="#8eabcf" fill="none" strokeWidth="1"/>
+      {vacc.map(m=><rect key={m.time} x={x(candleIndices.get(m.time)!)-Math.max(1,step*.55)/2} y={Math.min(ay(m.acc),MID)} width={Math.max(1,step*.55)} height={Math.max(.4,Math.abs(ay(m.acc)-MID))} fill={m.acc>=0?'#42d6ab':'#f4777c'} opacity=".65"/>)}
+      <polyline points={vacc.map(m=>`${x(candleIndices.get(m.time)!)},${vy(m.vel)}`).join(' ')} stroke="#d3b77e" fill="none" strokeWidth="1.2"/>
       {hover&&selected&&<g pointerEvents="none">
         <line x1={x(hover.index)} x2={x(hover.index)} y1={TOP} y2={H-28} stroke="#a9bbc2" strokeWidth=".7" strokeDasharray="3 3"/>
         {hoverPrice!==null&&<>

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyze } from '../lib/chan.ts';
-import { assessConfluenceSide, evaluateHigherConfluence, evaluateMacdConfluence, evaluateRelativeVolume } from '../lib/confluence.ts';
+import { assessConfluenceSide, evaluateHigherConfluence, evaluateRelativeVolume, evaluateVaccConfluence } from '../lib/confluence.ts';
 import type { Candle, Interval, MarketData } from '../lib/market-types';
-import type { ConfluenceContext, HigherConfluence, MacdConfluence, VolumeConfluence } from '../lib/confluence-types';
+import type { ConfluenceContext, HigherConfluence, VaccConfluence, VolumeConfluence } from '../lib/confluence-types';
 
 const epoch = (value: string) => Date.parse(value)/1000;
 const start = epoch('2026-01-01T00:00:00Z');
@@ -13,26 +13,37 @@ const cryptoContext: ConfluenceContext = {market:'crypto',interval:'1h',symbol:'
 function data(candles:Candle[], interval:Interval='4h'):MarketData {
   return {instrument:{id:'crypto:BTCUSDT',symbol:'BTCUSDT',name:'Bitcoin',market:'crypto',exchange:'Binance',currency:'USDT'},interval,candles,source:cryptoContext.source!,asOf:'2026-03-01T00:00:00Z',delayNotice:'',adjustment:cryptoContext.adjustment!,warnings:[],availableIntervals:['1h','4h']};
 }
-const readyMacd:MacdConfluence={status:'ready',direction:'long',momentum:'strengthening',dif:1,dea:.5,hist:1,samples:50};
+const readyVacc:VaccConfluence={status:'ready',direction:'long',pending:null,momentum:'strengthening',vel:1,acc:.1,samples:50};
 const readyVolume:VolumeConfluence={status:'ready',ratio:1.5,participation:'expanded',priceDirection:'long',samples:20,benchmark:'rolling-bars',reason:'ready'};
 const readyHigher:HigherConfluence={interval:'4h',status:'ready',direction:'long',bars:100,asOf:start};
 
-test('MACD remains one evidence group; positive impulse below the zero axis is mixed',()=>{
-  const points=Array.from({length:40},(_,i)=>({time:start+i*3600,dif:-2,dea:-2.5,hist:1}));
-  const macd=evaluateMacdConfluence(points,100);
-  assert.equal(macd.status,'ready');assert.equal(macd.direction,'neutral');
-  const assessment=assessConfluenceSide('long',macd,readyVolume,readyHigher);
+const vaccPoints=(n:number,f:(i:number)=>Partial<{vel:number;acc:number;state:'long'|'short'|null;pending:'long'|'short'|null}>)=>
+  Array.from({length:n},(_,i)=>({time:start+i*3600,vel:1,acc:.1,state:null,pending:null,...f(i)}));
+
+test('VAcc remains one evidence group; an unconfirmed zero-cross is pending, not aligned',()=>{
+  const vacc=evaluateVaccConfluence(vaccPoints(40,()=>({vel:.5,acc:.2,pending:'long'})),100);
+  assert.equal(vacc.status,'ready');assert.equal(vacc.direction,'neutral');assert.equal(vacc.pending,'long');
+  const assessment=assessConfluenceSide('long',vacc,readyVolume,readyHigher);
   assert.equal(assessment.status,'mixed');
-  assert.equal(assessment.evidence.filter(e=>e.factor==='macd').length,1);
-  assert.equal(assessment.evidence[0].code,'macd-mixed');
+  assert.equal(assessment.evidence.filter(e=>e.factor==='vacc').length,1);
+  assert.equal(assessment.evidence[0].code,'vacc-pending');
 });
 
-test('MACD weakening and short initialization history cannot claim full alignment',()=>{
-  const points=Array.from({length:40},(_,i)=>({time:start+i*3600,dif:2,dea:1,hist:i===39?.5:2}));
-  const macd=evaluateMacdConfluence(points,100);
-  assert.equal(macd.direction,'long');assert.equal(macd.momentum,'weakening');
-  assert.equal(assessConfluenceSide('long',macd,readyVolume,readyHigher).evidence[0].code,'macd-weakening');
-  assert.equal(evaluateMacdConfluence(points.slice(-34),100).status,'insufficient');
+test('VAcc confirmed direction requires Vel on the same side of zero',()=>{
+  const confirmed=evaluateVaccConfluence(vaccPoints(40,()=>({vel:2,acc:.3,state:'long'})),100);
+  assert.equal(confirmed.direction,'long');assert.equal(confirmed.momentum,'strengthening');
+  assert.equal(assessConfluenceSide('long',confirmed,readyVolume,readyHigher).evidence[0].code,'vacc-aligned');
+  assert.equal(assessConfluenceSide('short',confirmed,readyVolume,readyHigher).evidence[0].code,'vacc-opposed');
+  const crossedBack=evaluateVaccConfluence(vaccPoints(40,()=>({vel:-.5,acc:-.3,state:'long'})),100);
+  assert.equal(crossedBack.direction,'neutral');
+});
+
+test('VAcc deceleration and short history cannot claim full alignment',()=>{
+  const points=vaccPoints(40,i=>({vel:2,acc:i===39?-.4:.2,state:'long'}));
+  const vacc=evaluateVaccConfluence(points,100);
+  assert.equal(vacc.direction,'long');assert.equal(vacc.momentum,'weakening');
+  assert.equal(assessConfluenceSide('long',vacc,readyVolume,readyHigher).evidence[0].code,'vacc-weakening');
+  assert.equal(evaluateVaccConfluence(points.slice(-20),100).status,'insufficient');
 });
 
 test('US minute volume compares local session slots across DST and excludes opening spikes',()=>{
@@ -116,15 +127,15 @@ test('imported CSV and unavailable larger monthly interval retain explicit missi
   const imported=evaluateHigherConfluence({...cryptoContext,higher:{interval:'4h',status:'imported'}},start,()=> 'long');
   assert.equal(imported.status,'imported');
   assert.equal(evaluateHigherConfluence({...cryptoContext,interval:'1M'},start,()=> 'long').status,'none');
-  assert.equal(assessConfluenceSide('long',readyMacd,readyVolume,imported).status,'insufficient');
+  assert.equal(assessConfluenceSide('long',readyVacc,readyVolume,imported).status,'insufficient');
 });
 
 test('all groups must agree; missing evidence and disagreements cannot be outvoted',()=>{
-  assert.equal(assessConfluenceSide('long',readyMacd,readyVolume,readyHigher).status,'aligned');
-  assert.equal(assessConfluenceSide('long',readyMacd,{...readyVolume,participation:'normal'},readyHigher).status,'mixed');
-  assert.equal(assessConfluenceSide('long',readyMacd,readyVolume,{...readyHigher,direction:'short'}).status,'mixed');
-  assert.equal(assessConfluenceSide('long',{...readyMacd,direction:'short'},readyVolume,{...readyHigher,direction:'short'}).status,'opposed');
-  assert.equal(assessConfluenceSide('long',readyMacd,readyVolume,{...readyHigher,status:'error'}).status,'insufficient');
+  assert.equal(assessConfluenceSide('long',readyVacc,readyVolume,readyHigher).status,'aligned');
+  assert.equal(assessConfluenceSide('long',readyVacc,{...readyVolume,participation:'normal'},readyHigher).status,'mixed');
+  assert.equal(assessConfluenceSide('long',readyVacc,readyVolume,{...readyHigher,direction:'short'}).status,'mixed');
+  assert.equal(assessConfluenceSide('long',{...readyVacc,direction:'short'},readyVolume,{...readyHigher,direction:'short'}).status,'opposed');
+  assert.equal(assessConfluenceSide('long',readyVacc,readyVolume,{...readyHigher,status:'error'}).status,'insufficient');
 });
 
 test('advisory assessment never changes prices, triggered history, bias or decision',()=>{

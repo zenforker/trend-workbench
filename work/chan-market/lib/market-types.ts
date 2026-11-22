@@ -1,4 +1,5 @@
 import type { AnalysisInput, Confluence } from './confluence-types';
+import type { VaccParams, VaccPoint } from './vacc';
 
 export type Market = 'crypto' | 'us' | 'cn';
 export type Interval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1w' | '1M';
@@ -35,4 +36,4 @@ export interface TradeDecision {
   state:'unavailable'|'waiting'|'tracking'|'conflict';
   title:string; summary:string; asOf:number;
 }
-export interface Analysis { input?: AnalysisInput; fractals: Fractal[]; strokes: StructureLine[]; segments: StructureLine[]; centers: Center[]; signals: Signal[]; macd: {time: number; dif: number; dea: number; hist: number}[]; scenarios: Scenario[]; tradeSetups: TradeSetup[]; tradePlans:TradePlan[]; planSession?:TradePlanSession; decision:TradeDecision; confluence?:Confluence; bias: {long: number; short: number; label: string; factors: Factor[]}; calibration: {samples: number; up: number; down: number; flat: number; horizon: number; threshold: number; wilsonLow: number; wilsonHigh: number; method: string; asOf: string}; warnings: string[]; ruleVersion: string }
+export interface Analysis { input?: AnalysisInput; fractals: Fractal[]; strokes: StructureLine[]; segments: StructureLine[]; centers: Center[]; signals: Signal[]; vacc: VaccPoint[]; vaccParams: VaccParams; /** Time of the last closed bar analyzed; 0 when none. */ analyzedThrough: number; scenarios: Scenario[]; tradeSetups: TradeSetup[]; tradePlans:TradePlan[]; planSession?:TradePlanSession; decision:TradeDecision; confluence?:Confluence; bias: {long: number; short: number; label: string; factors: Factor[]}; calibration: {samples: number; up: number; down: number; flat: number; horizon: number; threshold: number; wilsonLow: number; wilsonHigh: number; method: string; asOf: string}; warnings: string[]; ruleVersion: string }

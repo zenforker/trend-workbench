@@ -5,7 +5,7 @@ const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: Ma
 const statusLabels = { untriggered: 'Not triggered', triggered: 'Triggered', invalidated: 'Invalidated', target_reached: 'Target reached' } as const;
 
 const factorNames: Record<string, string> = {
-  '中枢位置': 'Center position', '线段方向': 'Segment direction', '最近笔': 'Latest stroke', 'MACD动量': 'MACD momentum',
+  '中枢位置': 'Center position', '线段方向': 'Segment direction', '最近笔': 'Latest stroke', 'VAcc速度': 'VAcc velocity',
 };
 const factorDetails: Record<string, string> = {
   '价格位于最近线段中枢上方': 'Price is above the latest segment center.',
@@ -18,9 +18,9 @@ const factorDetails: Record<string, string> = {
   '最近确认笔向上；尾笔不纳入': 'The latest confirmed stroke points up; the developing stroke is excluded.',
   '最近确认笔向下；尾笔不纳入': 'The latest confirmed stroke points down; the developing stroke is excluded.',
   '有效笔不足': 'Insufficient valid strokes.',
-  '柱值为正，作辅助观察': 'The MACD histogram is positive; used as supporting evidence.',
-  '柱值为负，作辅助观察': 'The MACD histogram is negative; used as supporting evidence.',
-  '柱值接近零轴': 'The MACD histogram is near zero.',
+  '速度在零轴上方，作辅助观察': 'VAcc velocity is above zero; used as supporting evidence.',
+  '速度在零轴下方，作辅助观察': 'VAcc velocity is below zero; used as supporting evidence.',
+  '速度接近零轴': 'VAcc velocity is near zero.',
 };
 const warningText: Record<string, string> = {
   '线段为实验性特征序列实现（含有缺口/无缺口及强反向破坏）；复杂包含、古怪线段仍需人工核图，不宣称原典全规则唯一分解。': 'Segments use an experimental feature-sequence implementation, including gap, no-gap and strong reverse-break cases. Complex inclusion and unusual segments require chart review; a unique decomposition under all original rules is not claimed.',
@@ -62,7 +62,7 @@ function signalEn(s: Signal): Signal {
   const trending = s.type.startsWith('trend-');
   return {
     ...s, label: trending ? (buy ? 'Bullish divergence' : 'Bearish divergence') : (buy ? 'Downside weakening' : 'Upside weakening'),
-    reason: `A same-direction segment makes a new ${buy ? 'low' : 'high'} with a smaller absolute MACD histogram area than the prior comparison segment. ${trending ? 'Two directionally separated center candidates provide trend context.' : 'Full trend context is absent; this indicates weakening range momentum.'} This is an algorithmic divergence signal; recursive levels and comparison segments still require review.`,
+    reason: `A same-direction segment makes a new ${buy ? 'low' : 'high'} while the pullback returns VAcc velocity to zero and the later segment's ${s.reason.includes('速度与加速度面积')?'velocity peak and acceleration area are':s.reason.includes('加速度面积')?'acceleration area is':'velocity peak is'} smaller than the prior same-direction segment's. ${trending ? 'Two directionally separated center candidates provide trend context.' : 'Full trend context is absent; this indicates weakening range momentum.'} This is an algorithmic divergence signal; recursive levels and comparison segments still require review.`,
   };
 }
 
@@ -170,7 +170,7 @@ export function translateAnalysis(analysis: Analysis, language: AnalysisLanguage
     scenarios: analysis.scenarios.map(s => scenarioEn(s, analysis.scenarios)),
     tradeSetups: analysis.tradeSetups.map(setupEn),
     bias: { ...analysis.bias, label: biasLabels[analysis.bias.label] ?? analysis.bias.label, factors: analysis.bias.factors.map(factorEn) },
-    calibration: { ...c, method: `Rolling prefixes; three-factor distance ≤1 across center position, confirmed stroke direction and MACD sign. Non-overlapping samples every ${c.horizon} bars. ${c.samples < 20 ? 'Fewer than 20 samples: descriptive only, with no future probability estimate.' : 'Historical frequencies without independent out-of-sample calibration.'} The interval is the 95% Wilson interval for the upward frequency.` },
+    calibration: { ...c, method: `Rolling prefixes; three-factor distance ≤1 across center position, confirmed stroke direction and VAcc velocity sign. Non-overlapping samples every ${c.horizon} bars. ${c.samples < 20 ? 'Fewer than 20 samples: descriptive only, with no future probability estimate.' : 'Historical frequencies without independent out-of-sample calibration.'} The interval is the 95% Wilson interval for the upward frequency.` },
     warnings: analysis.warnings.map(warningEn),
     ruleVersion: analysis.ruleVersion.replace('2007-09-18新笔', '2007-09-18 new-stroke rules').replace('第62课旧笔', 'lesson 62 old-stroke rules').replace('仅已收盘K线', 'closed bars only'),
     ...(tradePlans ? { tradePlans } : {}),

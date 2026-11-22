@@ -134,7 +134,7 @@ function validGeometry(s:ReadyForecastSide):boolean {
 }
 
 function matchesInput(input:AnalysisInput|undefined,context:ForecastContext,bars:Bar[]):boolean {
-  // Older/context-free structure has no identity metadata. Its MACD timestamp
+  // Older/context-free structure has no identity metadata. Its analyzed-through timestamp
   // and each structural anchor still undergo the existing historical checks.
   if(!input)return true;
   const last=bars.at(-1),snapshot=input.lastBar;
@@ -179,7 +179,7 @@ export function buildForecast(candles:Candle[],analysis:Analysis,context:Forecas
   if(!positive(vol)||!Number.isFinite(atr))return result;
   result.atr=atr;result.buffer=vol;
   if(vol!==atr)result.noticeCodes.push('bounded-volatility');
-  const analysisMatches=analysis.macd.at(-1)?.time===last!.time && matchesInput(analysis.input,context,closed);
+  const analysisMatches=analysis.analyzedThrough===last!.time && matchesInput(analysis.input,context,closed);
   if(!analysisMatches)result.noticeCodes.push('analysis-prefix-mismatch');
   const levels=analysisMatches ? confirmedLevels(closed,analysis) : [];
   const near=levels.filter(l=>Math.abs(l.price-price)>=vol*.15&&Math.abs(l.price-price)<=vol*3);

@@ -65,7 +65,7 @@ test('same-type stronger fractal revises the candidate while the final pen stays
 test('unfinished latest candle cannot influence structures, bias, or empirical frequencies',()=>{
   const c=waves(220),base=analyze(c);
   const appended=analyze([...c,{...bar(220,1,10000,9999),closed:false}]);
-  for(const key of ['fractals','strokes','segments','centers','signals','bias','calibration','macd'] as const)assert.deepEqual(appended[key],base[key]);
+  for(const key of ['fractals','strokes','segments','centers','signals','bias','calibration','vacc','analyzedThrough'] as const)assert.deepEqual(appended[key],base[key]);
 });
 test('missing and invalid records preserve raw plotting indices',()=>{
   const c=waves(150);c[20]={...c[20],closed:false};c[25]={...c[25],high:NaN};

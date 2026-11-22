@@ -21,13 +21,15 @@ export interface AnalysisInput {
   firstTime: number | null;
   lastBar: Candle | null;
 }
-export interface MacdConfluence {
+/** VAcc evidence. `direction` is the acceleration-confirmed side while Vel is
+ * still on that side of zero; `pending` is an unconfirmed Vel zero-cross. */
+export interface VaccConfluence {
   status: 'ready' | 'insufficient';
   direction: ConfluenceDirection;
+  pending: 'long' | 'short' | null;
   momentum: 'strengthening' | 'weakening' | 'flat';
-  dif: number | null;
-  dea: number | null;
-  hist: number | null;
+  vel: number | null;
+  acc: number | null;
   samples: number;
 }
 export interface VolumeConfluence {
@@ -47,12 +49,12 @@ export interface HigherConfluence {
   asOf: number | null;
 }
 export type ConfluenceEvidenceCode =
-  | 'macd-aligned' | 'macd-weakening' | 'macd-opposed' | 'macd-mixed' | 'macd-insufficient'
+  | 'vacc-aligned' | 'vacc-weakening' | 'vacc-opposed' | 'vacc-mixed' | 'vacc-pending' | 'vacc-insufficient'
   | 'volume-aligned' | 'volume-opposed' | 'volume-normal' | 'volume-low' | 'volume-insufficient'
   | 'higher-aligned' | 'higher-opposed' | 'higher-neutral' | 'higher-insufficient' | 'higher-loading'
   | 'higher-error' | 'higher-none' | 'higher-imported' | 'higher-stale' | 'higher-mismatch';
 export interface ConfluenceEvidence {
-  factor: 'macd' | 'volume' | 'higher';
+  factor: 'vacc' | 'volume' | 'higher';
   status: ConfluenceStatus;
   code: ConfluenceEvidenceCode;
 }
@@ -65,7 +67,7 @@ export interface Confluence {
   input?: AnalysisInput;
   advisory: true;
   asOf: number;
-  macd: MacdConfluence;
+  vacc: VaccConfluence;
   volume: VolumeConfluence;
   higher: HigherConfluence;
   long: ConfluenceSide;

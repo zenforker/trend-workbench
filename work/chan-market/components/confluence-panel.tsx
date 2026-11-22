@@ -20,11 +20,12 @@ const assessmentNames:Record<Assessment['status'],[string,string]> = {
   opposed:['存在反向证据','Opposing evidence'],insufficient:['数据不全','Incomplete data'],
 };
 const evidenceNames:Record<EvidenceCode,[string,string]> = {
-  'macd-aligned':['MACD同向','MACD aligned'],
-  'macd-weakening':['MACD动能减弱','MACD momentum weakening'],
-  'macd-opposed':['MACD反向','MACD opposed'],
-  'macd-mixed':['MACD方向不明确','MACD direction unclear'],
-  'macd-insufficient':['MACD历史不足','Insufficient MACD history'],
+  'vacc-aligned':['VAcc同向确认','VAcc confirmed in this direction'],
+  'vacc-weakening':['VAcc加速度转弱','VAcc acceleration weakening'],
+  'vacc-opposed':['VAcc反向确认','VAcc confirmed in the opposite direction'],
+  'vacc-mixed':['VAcc方向未确认','VAcc direction unconfirmed'],
+  'vacc-pending':['VAcc速度已穿零轴，待加速度确认','VAcc velocity crossed zero; awaiting acceleration confirmation'],
+  'vacc-insufficient':['VAcc历史不足','Insufficient VAcc history'],
   'volume-aligned':['同向放量','Volume expands with price'],
   'volume-opposed':['反向放量','Volume expands against this side'],
   'volume-normal':['量能正常','Normal volume'],
@@ -52,16 +53,16 @@ const higherNames:Record<Confluence['higher']['status'],[string,string]> = {
 const directionText = (direction:'long'|'short'|'neutral',language:Language) =>
   direction==='long'?pick(language,'偏多','Bullish'):direction==='short'?pick(language,'偏空','Bearish'):pick(language,'方向不明确','No clear direction');
 
-function macdDirectionText(analysis:Analysis,language:Language):string {
-  const macd=analysis.confluence!.macd;
-  const price=analysis.planSession?.close;
-  if(macd.direction==='neutral'&&price!==undefined&&Number.isFinite(price)&&price>0&&macd.dif!==null&&macd.hist!==null&&Number.isFinite(macd.dif)&&Number.isFinite(macd.hist)) {
-    // Match the engine's near-zero tolerance for wording only; no model state changes.
-    const tolerance=Math.max(price*.00001,Number.EPSILON);
-    if(macd.dif< -tolerance&&macd.hist>tolerance)return pick(language,'零轴下反弹','Rebound below zero');
-    if(macd.dif>tolerance&&macd.hist< -tolerance)return pick(language,'零轴上回落','Pullback above zero');
+function vaccDirectionText(analysis:Analysis,language:Language):string {
+  const vacc=analysis.confluence!.vacc;
+  if(vacc.direction==='neutral'&&vacc.pending)return vacc.pending==='long'
+    ?pick(language,'速度上穿零轴，待确认','Velocity above zero, unconfirmed')
+    :pick(language,'速度下穿零轴，待确认','Velocity below zero, unconfirmed');
+  if(vacc.direction==='neutral'&&vacc.vel!==null&&vacc.acc!==null&&Number.isFinite(vacc.vel)&&Number.isFinite(vacc.acc)) {
+    if(vacc.vel<0&&vacc.acc>0)return pick(language,'零轴下减速','Decelerating below zero');
+    if(vacc.vel>0&&vacc.acc<0)return pick(language,'零轴上减速','Decelerating above zero');
   }
-  return directionText(macd.direction,language);
+  return directionText(vacc.direction,language);
 }
 
 export function assessmentText(assessment:Assessment,language:Language):string {
@@ -105,7 +106,7 @@ export default function ConfluencePanel({analysis,loading,language:override,inte
   const higherInterval=timeframe?(timeframe.higherInterval?forecastPeriod(timeframe.higherInterval,language):''):(c?.higher.interval?pick(language,...intervalNames[c.higher.interval]):'');
   const higherReady=timeframe?timeframe.status!=='unavailable':c?.higher.status==='ready';
   const evidenceCurrent=!forecast||!timeframe||c?.asOf===forecast.structureAsOf;
-  const momentum=c?.macd.momentum==='strengthening'?t('动能增强','Momentum strengthening'):c?.macd.momentum==='weakening'?t('动能减弱','Momentum weakening'):t('动能平稳','Momentum steady');
+  const momentum=c?.vacc.momentum==='strengthening'?t('加速','Accelerating'):c?.vacc.momentum==='weakening'?t('减速','Decelerating'):t('匀速','Steady');
   const volume=c?.volume.participation==='expanded'?t('放量','Expanded volume'):c?.volume.participation==='low'?t('量能偏低','Low volume'):t('量能正常','Normal volume');
   return <section className="confluence-card panel" aria-label={t('综合判断','Combined assessment')} data-testid="confluence-panel">
     <div className="card-top"><span><Activity size={18}/>{t('综合判断','Combined assessment')}</span><span className="confluence-mode">{t('辅助参考','Supporting context')}</span></div>
@@ -124,8 +125,8 @@ export default function ConfluencePanel({analysis,loading,language:override,inte
       {!forecast&&<><h2 className={`confluence-decision ${isDirectionUnclear(d)?'quiet':`${d.direction} ${d.state}`}`}>{d.title}</h2>
       <p className="confluence-summary" data-testid="confluence-summary">{confluenceSummary(analysis,language)}</p></>}
       <dl className="confluence-evidence">
-        <div className={c.macd.status==='ready'?'':'unavailable'}>
-          <dt>MACD</dt><dd>{c.macd.status==='ready'?`${macdDirectionText(analysis,language)} · ${momentum}`:t('已完成K线历史不足','Insufficient closed-bar history')}</dd>
+        <div className={c.vacc.status==='ready'?'':'unavailable'}>
+          <dt>VAcc</dt><dd>{c.vacc.status==='ready'?`${vaccDirectionText(analysis,language)} · ${momentum}`:t('已完成K线历史不足','Insufficient closed-bar history')}</dd>
         </div>
         <div className={c.volume.status==='ready'?'':'unavailable'}>
           <dt>{t('成交量','Volume')}</dt><dd>{c.volume.status==='ready'&&c.volume.ratio!==null?`${volume} · ${c.volume.ratio.toFixed(2)}×`:c.volume.reason==='zero-volume'?t('成交量缺失或为零','Volume is missing or zero'):t('可比较的量能历史不足','Insufficient comparable volume history')}</dd>

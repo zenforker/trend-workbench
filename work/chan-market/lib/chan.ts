@@ -2,6 +2,7 @@ import type { Analysis, Candle, Center, Factor, Fractal, Point, Scenario, Signal
 import { buildTradePlans, coordinateTradePlans } from './trade-plans.ts';
 import { buildConfluence } from './confluence.ts';
 import type { ConfluenceContext, ConfluenceDirection } from './confluence-types';
+import { accelerationArea, computeVacc, VACC_DEFAULTS, velocityPeak } from './vacc.ts';
 
 type Direction = 'up' | 'down';
 type IndexedCandle = Candle & { index: number };
@@ -286,14 +287,6 @@ export function buildCenters(segments:StructureLine[]) {
   return {centers,signals};
 }
 
-function calculateMacd(bars:IndexedCandle[]) {
-  let fast=bars[0]?.close||0,slow=fast,dea=0;
-  return bars.map(b=>{
-    fast+=2/13*(b.close-fast);slow+=2/27*(b.close-slow);
-    const dif=fast-slow;dea+=2/10*(dif-dea);
-    return {time:b.time,dif,dea,hist:2*(dif-dea)};
-  });
-}
 function atr(bars:IndexedCandle[]) {
   if(!bars.length)return 0;
   const last=bars.slice(-15);
@@ -301,24 +294,25 @@ function atr(bars:IndexedCandle[]) {
 }
 function core(bars:IndexedCandle[], mode:'new'|'old') {
   const merged=mergeIndexed(bars),fractals=findFractals(merged),strokes=buildPens(fractals,mode),segments=buildSegments(strokes);
-  const {centers,signals}=buildCenters(segments),macd=calculateMacd(bars);
-  const current=bars[bars.length-1],last=macd[macd.length-1];
+  const {centers,signals}=buildCenters(segments),vacc=computeVacc(bars,VACC_DEFAULTS);
+  const current=bars[bars.length-1],last=vacc[vacc.length-1];
   const recent=strokes.filter(x=>x.confirmed).slice(-1)[0];
   const segment=segments.filter(x=>x.confirmed).slice(-1)[0];
   const center=centers[centers.length-1];
   const price=current?.close||0;
   const position=center?(price>center.high?1:price<center.low?-1:0):0;
-  const momentum=last&&price?last.hist/price:0;
-  const momentumBucket=Math.abs(momentum)<0.0002?0:momentum>0?1:-1;
+  // Vel is a per-bar price velocity; scale by price so the factor is comparable across instruments.
+  const momentum=last&&price?last.vel/price:0;
+  const momentumBucket=Math.abs(momentum)<0.0001?0:momentum>0?1:-1;
   const strokeDirection=recent?(recent.direction==='up'?1:-1):0;
   const factors:Factor[]=[
     {name:'中枢位置',value:position*18,detail:center?(position>0?'价格位于最近线段中枢上方':position<0?'价格位于最近线段中枢下方':'价格仍在最近线段中枢内'):'尚无已确认线段中枢'},
     {name:'线段方向',value:segment?(segment.direction==='up'?12:-12):0,detail:segment?`最近确认线段${segment.direction==='up'?'向上':'向下'}`:'确认线段不足'},
     {name:'最近笔',value:strokeDirection*7,detail:recent?`最近确认笔${recent.direction==='up'?'向上':'向下'}；尾笔不纳入`:'有效笔不足'},
-    {name:'MACD动量',value:Math.round(clamp(momentum*15000,-10,10)),detail:momentumBucket>0?'柱值为正，作辅助观察':momentumBucket<0?'柱值为负，作辅助观察':'柱值接近零轴'}
+    {name:'VAcc速度',value:Math.round(clamp(momentum*5000,-10,10)),detail:momentumBucket>0?'速度在零轴上方，作辅助观察':momentumBucket<0?'速度在零轴下方，作辅助观察':'速度接近零轴'}
   ];
   const long=bars.length<35?50:Math.round(clamp(50+factors.reduce((s,f)=>s+f.value,0),10,90));
-  return {fractals,strokes,segments,centers,signals,macd,bias:{long,short:100-long,label:bars.length<35?'样本不足':long>=60?'结构偏多':long<=40?'结构偏空':'结构均衡',factors},state:[position,strokeDirection,momentumBucket]};
+  return {fractals,strokes,segments,centers,signals,vacc,bias:{long,short:100-long,label:bars.length<35?'样本不足':long>=60?'结构偏多':long<=40?'结构偏空':'结构均衡',factors},state:[position,strokeDirection,momentumBucket]};
 }
 
 /** Each sample's features are computed on its own prefix. Targets are read only
@@ -348,24 +342,35 @@ export function historicalCalibration(candles:Candle[], options:{penMode?:'new'|
   for(let i=0,remaining=n?1000-tenths.reduce((a,b)=>a+b,0):0;i<remaining;i++)tenths[order[i%3]]++;
   return {calibration:{samples:n,up:tenths[0]/10,down:tenths[1]/10,flat:tenths[2]/10,horizon,threshold,
     wilsonLow:n?Math.round(Math.max(0,center-margin)*1000)/10:0,wilsonHigh:n?Math.round(Math.min(1,center+margin)*1000)/10:100,
-    method:`滚动前缀；中枢位置/确认笔方向/MACD符号三维距离≤1；每${horizon}根取一次不重叠样本；${n<20?'样本不足20，仅作描述，不估计未来概率':'历史频率，未完成独立样本外校准'}；区间为上涨频率的95% Wilson区间`,
+    method:`滚动前缀；中枢位置/确认笔方向/VAcc速度符号三维距离≤1；每${horizon}根取一次不重叠样本；${n<20?'样本不足20，仅作描述，不估计未来概率':'历史频率，未完成独立样本外校准'}；区间为上涨频率的95% Wilson区间`,
     asOf:bars.length?new Date(bars[bars.length-1].time*1000).toISOString():''},records,currentState:target};
 }
 
+/** 《自然缠》5.3: same-direction confirmed segments a and c around a reverse
+ * segment b. c must make a new extreme; b must pull Vel back to (or through)
+ * zero; a and c velocity peaks must share a sign. Divergence = c's Vel peak
+ * and/or c's same-direction acceleration area is smaller than a's. */
 function addDivergenceSignals(bars:IndexedCandle[], structure:ReturnType<typeof core>) {
-  const lines=structure.segments.filter(x=>x.confirmed);
+  const lines=structure.segments.filter(x=>x.confirmed),points=structure.vacc;
   for(let i=2;i<lines.length;i++) {
-    const prev=lines[i-2],now=lines[i];
-    if(prev.direction!==now.direction)continue;
-    const extreme=now.direction==='up'?now.to.price>prev.to.price:now.to.price<prev.to.price;
+    const prev=lines[i-2],pullback=lines[i-1],now=lines[i],dir=now.direction;
+    if(prev.direction!==dir)continue;
+    const extreme=dir==='up'?now.to.price>prev.to.price:now.to.price<prev.to.price;
     if(!extreme)continue;
-    const area=(line:StructureLine)=>bars.reduce((sum,b,j)=>sum+(b.index>=line.from.index&&b.index<=line.to.index?Math.abs(structure.macd[j].hist):0),0);
-    const before=area(prev),after=area(now);
-    if(before<=0||after>=before*0.85)continue;
+    const sign=dir==='up'?1:-1;
+    const peakA=velocityPeak(points,prev.from.time,prev.to.time,dir),peakC=velocityPeak(points,now.from.time,now.to.time,dir);
+    const pull=velocityPeak(points,pullback.from.time,pullback.to.time,pullback.direction);
+    if(peakA===null||peakC===null||pull===null)continue;
+    if(peakA*sign<=0||peakC*sign<=0||pull*sign>0)continue;
+    const speed=Math.abs(peakC)<Math.abs(peakA);
+    const areaA=Math.abs(accelerationArea(points,prev.from.time,prev.to.time,dir)),areaC=Math.abs(accelerationArea(points,now.from.time,now.to.time,dir));
+    const area=areaA>0&&areaC<areaA;
+    if(!speed&&!area)continue;
+    const kinds=[speed?'速度':'',area?'加速度面积':''].filter(Boolean).join('与');
     const related=structure.centers.filter(x=>x.startIndex>=prev.from.index&&x.endIndex<=now.to.index);
-    const trending=related.length>=2&&related.slice(1).every((c,j)=>now.direction==='up'?c.low>related[j].high:c.high<related[j].low);
-    structure.signals.push({...now.to,label:trending?(now.direction==='up'?'顶背驰信号':'底背驰信号'):(now.direction==='up'?'顶部力度减弱':'底部力度减弱'),side:now.direction==='up'?'short':'long',type:trending?'trend-divergence-candidate':'range-divergence-candidate',confirmed:false,
-      reason:`同向线段创新${now.direction==='up'?'高':'低'}，MACD绝对柱面积低于前同向段；${trending?'有两个同向中枢候选背景':'未满足完整趋势背景，按盘整力度减弱观察'}。仅为背驰候选，需核对递归级别和实际比较段。`});
+    const trending=related.length>=2&&related.slice(1).every((c,j)=>dir==='up'?c.low>related[j].high:c.high<related[j].low);
+    structure.signals.push({...now.to,label:trending?(dir==='up'?'顶背驰信号':'底背驰信号'):(dir==='up'?'顶部力度减弱':'底部力度减弱'),side:dir==='up'?'short':'long',type:trending?'trend-divergence-candidate':'range-divergence-candidate',confirmed:false,
+      reason:`同向线段创新${dir==='up'?'高':'低'}，回调段使VAcc速度回到零轴，后段${kinds}弱于前同向段；${trending?'有两个同向中枢候选背景':'未满足完整趋势背景，按盘整力度减弱观察'}。仅为背驰候选，需核对递归级别和实际比较段。`});
   }
 }
 const format=(n:number)=>Number(n.toPrecision(6)).toLocaleString('en-US',{maximumFractionDigits:8});
@@ -465,9 +470,9 @@ export function analyze(candles:Candle[], options:AnalysisOptions={}):Analysis {
   const {tradePlans,decision,planSession}=options.skipTradePlans
     ?{tradePlans:options.planSession?.plans??[],decision:coordinateTradePlans(options.planSession?.plans??[],s.bias,bars.at(-1)?.time??0).decision,planSession:options.planSession}
     :buildTradePlans(bars,s,prefix=>core(prefix,mode),options.planSession);
-  const confluence=options.context?buildConfluence(bars,s.macd,options.context,higherBars=>{
+  const confluence=options.context?buildConfluence(bars,s.vacc,options.context,higherBars=>{
     const higher=core(validClosed(higherBars).bars,mode);
-    // Structural background excludes its MACD factor: the current MACD remains
+    // Structural background excludes its VAcc factor: the current VAcc remains
     // one evidence family rather than being counted again through the bias %.
     const structural=higher.bias.factors.slice(0,3).reduce((sum,f)=>sum+f.value,0);
     return (structural>=7?'long':structural<=-7?'short':'neutral') as ConfluenceDirection;
@@ -485,5 +490,5 @@ export function analyze(candles:Candle[], options:AnalysisOptions={}):Analysis {
   if(candles.some(x=>x.closed===false))warnings.push('当前未收盘K线仅供价格展示，已排除出结构、评分与历史统计。');
   if(invalid)warnings.push(`已排除 ${invalid} 根无效、重复或乱序K线；检查数据来源。`);
   if(s.strokes.length<3)warnings.push('当前窗口有效笔不足；可增加历史范围或切换周期。');
-  return {input:confluence?.input,fractals:s.fractals.map(f=>({index:f.index,time:f.time,price:f.price,type:f.type,confirmedAt:f.confirmedAt})),strokes:s.strokes,segments:s.segments,centers:s.centers,signals:s.signals.sort((a,b)=>a.index-b.index),macd:s.macd,scenarios:scenarios(bars,s),tradeSetups:tradeSetups(bars,s),tradePlans,planSession,decision,confluence,bias:s.bias,calibration,warnings,ruleVersion:`chan-experimental-1.5 · ${mode==='new'?'2007-09-18新笔':'第62课旧笔'} · 仅已收盘K线`};
+  return {input:confluence?.input,fractals:s.fractals.map(f=>({index:f.index,time:f.time,price:f.price,type:f.type,confirmedAt:f.confirmedAt})),strokes:s.strokes,segments:s.segments,centers:s.centers,signals:s.signals.sort((a,b)=>a.index-b.index),vacc:s.vacc,vaccParams:{...VACC_DEFAULTS},analyzedThrough:bars.at(-1)?.time??0,scenarios:scenarios(bars,s),tradeSetups:tradeSetups(bars,s),tradePlans,planSession,decision,confluence,bias:s.bias,calibration,warnings,ruleVersion:`chan-experimental-1.5 · VAcc ${VACC_DEFAULTS.n}/${VACC_DEFAULTS.m} · ${mode==='new'?'2007-09-18新笔':'第62课旧笔'} · 仅已收盘K线`};
 }

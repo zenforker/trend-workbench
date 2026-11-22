@@ -136,7 +136,7 @@ export function collectHoldoutEvents(input: ResearchInput) {
   const holdoutStart = Math.max(60, Math.floor(candles.length * (1 - fraction)));
   let session: TradePlanSession | undefined;
   const seen = new Set<string>(), events: TriggerEvent[] = [];
-  const evidenceCoverage = { snapshots: 0, macdReady: 0, volumeReady: 0, higherStatuses: {} as Record<string, number> };
+  const evidenceCoverage = { snapshots: 0, vaccReady: 0, volumeReady: 0, higherStatuses: {} as Record<string, number> };
   // First prefix establishes state on the warm-up only. Later prefixes advance
   // one candle at a time, so earlier terminal plans cannot hide fresh events.
   for (let index = holdoutStart - 1; index < candles.length; index++) {
@@ -149,7 +149,7 @@ export function collectHoldoutEvents(input: ResearchInput) {
     session = analysis.planSession;
     if (index < holdoutStart) continue;
     evidenceCoverage.snapshots++;
-    if (analysis.confluence?.macd.status === 'ready') evidenceCoverage.macdReady++;
+    if (analysis.confluence?.vacc.status === 'ready') evidenceCoverage.vaccReady++;
     if (analysis.confluence?.volume.status === 'ready') evidenceCoverage.volumeReady++;
     const higherStatus = analysis.confluence?.higher.status ?? 'missing-confluence';
     evidenceCoverage.higherStatuses[higherStatus] = (evidenceCoverage.higherStatuses[higherStatus] ?? 0) + 1;
