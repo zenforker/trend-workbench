@@ -70,6 +70,7 @@ export function buildNaturalStrokes(bars: readonly StrokeBar[]): { strokes: Stru
     return {
       from: at(w.s, w.dir, false), to: at(w.e, w.dir, true), direction: w.dir, confirmed,
       confirmedAt: confirmed ? bars[list[k + 1].validAt].index : Math.max(bars[w.validAt].index, bars[w.e].index),
+      kind: w.standard ? 'standard' : 'quasi',
     };
   });
   // Turning points: each stroke's start, known once that stroke validated.

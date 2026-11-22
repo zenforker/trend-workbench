@@ -4,6 +4,7 @@ import { buildConfluence } from './confluence.ts';
 import type { ConfluenceContext, ConfluenceDirection } from './confluence-types';
 import { accelerationArea, computeVacc, VACC_DEFAULTS, velocityPeak } from './vacc.ts';
 import { buildNaturalStrokes } from './natural-strokes.ts';
+import { buildNaturalLevel } from './natural-levels.ts';
 
 type Direction = 'up' | 'down';
 type IndexedCandle = Candle & { index: number };
@@ -296,7 +297,8 @@ function atr(bars:IndexedCandle[]) {
 function core(bars:IndexedCandle[], mode:'new'|'old') {
   // 'new' = 自然笔 (Natural Chan); 'old' keeps the classic lesson-62 pen for comparison.
   const pens=mode==='new'?buildNaturalStrokes(bars):(()=>{const fractals=findFractals(mergeIndexed(bars));return {fractals,strokes:buildPens(fractals,mode)};})();
-  const fractals=pens.fractals,strokes=pens.strokes,segments=buildSegments(strokes);
+  // 自然笔 → 自然段 → 本级别趋势 (= higher-level segments); classic pens keep the feature-sequence segments.
+  const fractals=pens.fractals,strokes=pens.strokes,segments=mode==='new'?buildNaturalLevel(strokes):buildSegments(strokes),trends=mode==='new'?buildNaturalLevel(segments):[];
   const {centers,signals}=buildCenters(segments),vacc=computeVacc(bars,VACC_DEFAULTS);
   const current=bars[bars.length-1],last=vacc[vacc.length-1];
   const recent=strokes.filter(x=>x.confirmed).slice(-1)[0];
@@ -315,7 +317,7 @@ function core(bars:IndexedCandle[], mode:'new'|'old') {
     {name:'VAcc速度',value:Math.round(clamp(momentum*5000,-10,10)),detail:momentumBucket>0?'速度在零轴上方，作辅助观察':momentumBucket<0?'速度在零轴下方，作辅助观察':'速度接近零轴'}
   ];
   const long=bars.length<35?50:Math.round(clamp(50+factors.reduce((s,f)=>s+f.value,0),10,90));
-  return {fractals,strokes,segments,centers,signals,vacc,bias:{long,short:100-long,label:bars.length<35?'样本不足':long>=60?'结构偏多':long<=40?'结构偏空':'结构均衡',factors},state:[position,strokeDirection,momentumBucket]};
+  return {fractals,strokes,segments,trends,centers,signals,vacc,bias:{long,short:100-long,label:bars.length<35?'样本不足':long>=60?'结构偏多':long<=40?'结构偏空':'结构均衡',factors},state:[position,strokeDirection,momentumBucket]};
 }
 
 /** Each sample's features are computed on its own prefix. Targets are read only
@@ -493,5 +495,5 @@ export function analyze(candles:Candle[], options:AnalysisOptions={}):Analysis {
   if(candles.some(x=>x.closed===false))warnings.push('当前未收盘K线仅供价格展示，已排除出结构、评分与历史统计。');
   if(invalid)warnings.push(`已排除 ${invalid} 根无效、重复或乱序K线；检查数据来源。`);
   if(s.strokes.length<3)warnings.push('当前窗口有效笔不足；可增加历史范围或切换周期。');
-  return {input:confluence?.input,fractals:s.fractals.map(f=>({index:f.index,time:f.time,price:f.price,type:f.type,confirmedAt:f.confirmedAt})),strokes:s.strokes,segments:s.segments,centers:s.centers,signals:s.signals.sort((a,b)=>a.index-b.index),vacc:s.vacc,vaccParams:{...VACC_DEFAULTS},analyzedThrough:bars.at(-1)?.time??0,scenarios:scenarios(bars,s),tradeSetups:tradeSetups(bars,s),tradePlans,planSession,decision,confluence,bias:s.bias,calibration,warnings,ruleVersion:`chan-experimental-1.5 · VAcc ${VACC_DEFAULTS.n}/${VACC_DEFAULTS.m} · ${mode==='new'?'自然笔':'第62课旧笔'} · 仅已收盘K线`};
+  return {input:confluence?.input,fractals:s.fractals.map(f=>({index:f.index,time:f.time,price:f.price,type:f.type,confirmedAt:f.confirmedAt})),strokes:s.strokes,segments:s.segments,trends:s.trends,centers:s.centers,signals:s.signals.sort((a,b)=>a.index-b.index),vacc:s.vacc,vaccParams:{...VACC_DEFAULTS},analyzedThrough:bars.at(-1)?.time??0,scenarios:scenarios(bars,s),tradeSetups:tradeSetups(bars,s),tradePlans,planSession,decision,confluence,bias:s.bias,calibration,warnings,ruleVersion:`chan-experimental-1.5 · VAcc ${VACC_DEFAULTS.n}/${VACC_DEFAULTS.m} · ${mode==='new'?'自然笔/段/趋势':'第62课旧笔'} · 仅已收盘K线`};
 }

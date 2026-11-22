@@ -8,7 +8,8 @@ export interface Candle { time: number; open: number; high: number; low: number;
 export interface MarketData { instrument: Instrument; interval: Interval; candles: Candle[]; source: string; asOf: string; delayNotice: string; adjustment: string; warnings: string[]; availableIntervals: Interval[]; history?: {requested:number;received:number;closed:number;firstTime:number|null;lastTime:number|null;status:'target-met'|'limited'|'insufficient'} }
 export interface Point { index: number; time: number; price: number }
 export interface StructurePriceRange { low:number; high:number; lowPoint:Point; highPoint:Point }
-export interface StructureLine { from: Point; to: Point; direction: 'up' | 'down'; confirmed: boolean; confirmedAt: number; priceRange?:StructurePriceRange }
+/** kind (Natural Chan only): 'quasi' = 类笔/类段/类趋势 formed by breaking the previous line's start. */
+export interface StructureLine { from: Point; to: Point; direction: 'up' | 'down'; confirmed: boolean; confirmedAt: number; priceRange?:StructurePriceRange; kind?:'standard'|'quasi' }
 export interface Fractal extends Point { type: 'top' | 'bottom'; confirmedAt: number }
 export interface Center { startIndex: number; endIndex: number; low: number; high: number; level: string; status: 'active' | 'broken' }
 export interface Signal extends Point { label: string; side: 'long' | 'short'; type: string; confirmed: boolean; reason: string }
@@ -36,4 +37,4 @@ export interface TradeDecision {
   state:'unavailable'|'waiting'|'tracking'|'conflict';
   title:string; summary:string; asOf:number;
 }
-export interface Analysis { input?: AnalysisInput; fractals: Fractal[]; strokes: StructureLine[]; segments: StructureLine[]; centers: Center[]; signals: Signal[]; vacc: VaccPoint[]; vaccParams: VaccParams; /** Time of the last closed bar analyzed; 0 when none. */ analyzedThrough: number; scenarios: Scenario[]; tradeSetups: TradeSetup[]; tradePlans:TradePlan[]; planSession?:TradePlanSession; decision:TradeDecision; confluence?:Confluence; bias: {long: number; short: number; label: string; factors: Factor[]}; calibration: {samples: number; up: number; down: number; flat: number; horizon: number; threshold: number; wilsonLow: number; wilsonHigh: number; method: string; asOf: string}; warnings: string[]; ruleVersion: string }
+export interface Analysis { input?: AnalysisInput; fractals: Fractal[]; strokes: StructureLine[]; segments: StructureLine[]; /** 本级别趋势 = segments one level up (Natural Chan); empty for classic pens. */ trends: StructureLine[]; centers: Center[]; signals: Signal[]; vacc: VaccPoint[]; vaccParams: VaccParams; /** Time of the last closed bar analyzed; 0 when none. */ analyzedThrough: number; scenarios: Scenario[]; tradeSetups: TradeSetup[]; tradePlans:TradePlan[]; planSession?:TradePlanSession; decision:TradeDecision; confluence?:Confluence; bias: {long: number; short: number; label: string; factors: Factor[]}; calibration: {samples: number; up: number; down: number; flat: number; horizon: number; threshold: number; wilsonLow: number; wilsonHigh: number; method: string; asOf: string}; warnings: string[]; ruleVersion: string }
