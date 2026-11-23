@@ -73,3 +73,12 @@ test('no look-ahead: every stroke of a prefix uses only bars inside that prefix'
       assert.ok(full.some(f => f.from.index === s.from.index && f.to.index === s.to.index), `stroke ${s.from.index}→${s.to.index} changed`);
   }
 });
+
+test('eventAt moves only when a stroke is established, not when the current stroke merely extends', () => {
+  const base: [number, number][] = [[19, 20], [17, 18.5], [15, 16.5]];          // down stroke established at bar 2
+  assert.equal(buildNaturalStrokes(bars(base)).eventAt, 2);
+  const extended = [...base, [14, 15.2], [12, 13.5]] as [number, number][];   // extension only
+  assert.equal(buildNaturalStrokes(bars(extended)).eventAt, 2);
+  const reversed = [...extended, [13.6, 14.5], [15, 16]] as [number, number][]; // up stroke established at bar 6
+  assert.equal(buildNaturalStrokes(bars(reversed)).eventAt, 6);
+});

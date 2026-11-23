@@ -38,15 +38,18 @@ export function isStandardStroke(bars: readonly StrokeBar[], a: number, b: numbe
   return lTop > hBot && (up ? lTopAt > hBotAt : lTopAt < hBotAt);
 }
 
-export function buildNaturalStrokes(bars: readonly StrokeBar[]): { strokes: StructureLine[]; fractals: Fractal[] } {
+/** eventAt = raw index of the last bar at which the stroke list changed other than by
+ * extension (a stroke established, a 类笔 formed or merged); -1 when none. Segments and
+ * trends are built from confirmed strokes, so they can only change at such bars. */
+export function buildNaturalStrokes(bars: readonly StrokeBar[]): { strokes: StructureLine[]; fractals: Fractal[]; eventAt: number } {
   const n = bars.length, list: Working[] = [];
-  let i = 0;
+  let i = 0, event = -1;
   // Bootstrap: the first standard stroke between the running extremes.
   for (let hi = 0, lo = 0; i < n && !list.length; i++) {
     if (bars[i].high > bars[hi].high) hi = i;
     if (bars[i].low < bars[lo].low) lo = i;
-    if (hi === i && lo < hi && isStandardStroke(bars, lo, hi, 'up')) list.push({ s: lo, e: hi, dir: 'up', standard: true, validAt: i });
-    else if (lo === i && hi < lo && isStandardStroke(bars, hi, lo, 'down')) list.push({ s: hi, e: lo, dir: 'down', standard: true, validAt: i });
+    if (hi === i && lo < hi && isStandardStroke(bars, lo, hi, 'up')) { list.push({ s: lo, e: hi, dir: 'up', standard: true, validAt: i }); event = i; }
+    else if (lo === i && hi < lo && isStandardStroke(bars, hi, lo, 'down')) { list.push({ s: hi, e: lo, dir: 'down', standard: true, validAt: i }); event = i; }
   }
   let r = -1; // most extreme reverse bar since the current stroke's end
   for (; i < n; i++) {
@@ -54,12 +57,12 @@ export function buildNaturalStrokes(bars: readonly StrokeBar[]): { strokes: Stru
     if (up ? bar.high > bars[cur.e].high : bar.low < bars[cur.e].low) { cur.e = i; r = -1; continue; }
     if (r < 0 || (up ? bar.low < bars[r].low : bar.high > bars[r].high)) r = i; else continue;
     const rev: Direction = up ? 'down' : 'up';
-    if (isStandardStroke(bars, cur.e, r, rev)) { list.push({ s: cur.e, e: r, dir: rev, standard: true, validAt: i }); r = -1; continue; }
+    if (isStandardStroke(bars, cur.e, r, rev)) { list.push({ s: cur.e, e: r, dir: rev, standard: true, validAt: i }); r = -1; event = i; continue; }
     const brokeStart = up ? bars[r].low < bars[cur.s].low : bars[r].high > bars[cur.s].high;
     if (!brokeStart) continue;
     if (cur.standard || list.length < 2) list.push({ s: cur.e, e: r, dir: rev, standard: false, validAt: i }); // 新生
     else { list.pop(); list[list.length - 1].e = r; } // 合并
-    r = -1;
+    r = -1; event = i;
   }
   const at = (pos: number, dir: Direction, end: boolean) => {
     const high = (dir === 'up') === end;
@@ -77,5 +80,5 @@ export function buildNaturalStrokes(bars: readonly StrokeBar[]): { strokes: Stru
   const fractals: Fractal[] = list.map(w => ({
     ...at(w.s, w.dir, false), type: w.dir === 'up' ? 'bottom' : 'top', confirmedAt: bars[w.validAt].index,
   }));
-  return { strokes, fractals };
+  return { strokes, fractals, eventAt: event >= 0 ? bars[event].index : -1 };
 }

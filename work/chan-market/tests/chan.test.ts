@@ -140,3 +140,12 @@ test('Natural Chan mode has no classic centers, no 类三买/卖 candidates and 
   assert.ok(a.bias.factors.every(f=>f.name!=='中枢位置'));
   assert.ok(analyze(waves(1000),{penMode:'old'}).centers.length>0,'classic mode keeps its centers for comparison');
 });
+
+test('structure clock: analysing up to structureAsOf reproduces the same structure as the full series',()=>{
+  const c=waves(600),full=analyze(c);
+  assert.ok(full.structureAsOf>0&&full.structureAsOf<c.length);
+  const cut=analyze(c.slice(0,full.structureAsOf+1));
+  assert.equal(cut.structureAsOf,full.structureAsOf);
+  assert.deepEqual(cut.strokes.slice(0,-1),full.strokes.slice(0,-1));
+  assert.deepEqual(cut.segments.filter(s=>s.confirmed),full.segments.filter(s=>s.confirmed));
+});

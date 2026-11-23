@@ -90,6 +90,16 @@ function HomeContent(){
   // Hydrate the browser-owned watchlist after SSR; it has no server equivalent.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(()=>{try{const stored=JSON.parse(localStorage.getItem('chan-watchlist-v1')||'null');if(Array.isArray(stored)&&stored.every(i=>i&&typeof i.id==='string'&&['crypto','us','cn'].includes(i.market)&&typeof i.symbol==='string'&&typeof i.name==='string'))setWatchlist(stored);}catch{}},[]);
+  // UI settings survive reloads (author request 2026-11-23); data refreshes never touch them.
+  const uiHydrated=useRef(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(()=>{try{const s=JSON.parse(localStorage.getItem('trend-workbench-ui-v1')||'null');if(s&&typeof s==='object'){
+    if(s.selected&&typeof s.selected.id==='string'&&['crypto','us','cn'].includes(s.selected.market)&&typeof s.selected.symbol==='string'&&typeof s.selected.name==='string'){setSelected(s.selected);setMarket(s.selected.market);}
+    if(INTERVALS.includes(s.interval))setInterval(s.interval);
+    if(s.layers&&typeof s.layers==='object')setLayers(l=>{const next={...l};for(const k of Object.keys(l) as (keyof Layers)[])if(typeof s.layers[k]==='boolean')next[k]=s.layers[k];return {...next,centers:false};});
+    if(['setups','scenarios','signals'].includes(s.signalTab))setSignalTab(s.signalTab);
+  }}catch{}uiHydrated.current=true;},[]);
+  useEffect(()=>{if(!uiHydrated.current||imported)return;try{localStorage.setItem('trend-workbench-ui-v1',JSON.stringify({selected,interval,layers,signalTab}));}catch{}},[selected,interval,layers,signalTab,imported]);
   const notify=useCallback((message:string)=>{setToast(message);setTimeout(()=>setToast(''),5500);},[]);
   const lastNotice=useRef<string|null>(null);
   useEffect(()=>{const notice=notices[0];if(!notice||lastNotice.current===notice.id)return;lastNotice.current=notice.id;const event=notice.intrabar?notice.type==='invalidation'?t('收到报价触及止损价','Received quote touched the stop-loss price'):notice.type==='target1'?t('收到报价触及第一止盈价','Received quote touched the take-profit 1 price'):t('收到报价触及第二止盈价','Received quote touched the take-profit 2 price'):notice.type==='condition-met'?t('预判条件满足','Outlook condition met'):notice.type==='invalidated'?t('止损价触及','Stop-loss price touched'):notice.type==='target1'?t('第一止盈价触及','Take-profit 1 price touched'):t('第二止盈价触及','Take-profit 2 price touched');notify(`${notice.symbol} · ${notice.interval} · ${event} ${priceText(notice.price)}`);},[notices,notify,t]);
@@ -144,9 +154,19 @@ function HomeContent(){
     try{return analyze(candles,{penMode,horizon:12,skipTradePlans:true,planSession:live&&planKey?readPlanSession(planKey):undefined,context:analysisContext});}catch{return null;}
   },[candles,penMode,live,planKey,analysisContext,pendingContext]);
   // Legacy plan sessions are read-only archives; forward outlooks have a separate observation journal.
-  const analysis=useMemo(()=>rawAnalysis?translateAnalysis(rawAnalysis,language):null,[rawAnalysis,language]);
+  // Structure clock (author request 2026-11-23): candles, price and VAcc update with every refresh, but
+  // structure and everything derived from it (strokes/segments/trends, bias, confluence, outlook, plans)
+  // are shown as of the latest structural event — the bar where the last stroke was established.
+  const structureCut=rawAnalysis&&rawAnalysis.structureAsOf>=0?Math.min(candles.length,rawAnalysis.structureAsOf+1):candles.length;
+  const structureCandles=useMemo(()=>structureCut<candles.length?candles.slice(0,structureCut):candles,[candles,structureCut]);
+  const structureAnalysis=useMemo<Analysis|null>(()=>{
+    if(!rawAnalysis||structureCandles===candles)return rawAnalysis;
+    try{return analyze(structureCandles,{penMode,horizon:12,skipTradePlans:true,planSession:live&&planKey?readPlanSession(planKey):undefined,context:analysisContext});}catch{return rawAnalysis;}
+  },[rawAnalysis,structureCandles,candles,penMode,live,planKey,analysisContext]);
+  // The VAcc pane is data, not structure: always the live series.
+  const analysis=useMemo(()=>structureAnalysis&&rawAnalysis?translateAnalysis({...structureAnalysis,vacc:rawAnalysis.vacc},language):null,[structureAnalysis,rawAnalysis,language]);
   const strokeCenters:never[]=[]; // Natural Chan: no 中枢 layer
-  const rawForecast=useMemo(()=>rawAnalysis&&data?buildForecast(candles,rawAnalysis,{market:data.instrument.market,symbol:data.instrument.symbol,interval:data.interval,source:data.source,adjustment:data.adjustment,...(live?{asOf:cutoff}:{})}):null,[rawAnalysis,data,candles,live,cutoff]);
+  const rawForecast=useMemo(()=>structureAnalysis&&data?buildForecast(structureCandles,structureAnalysis,{market:data.instrument.market,symbol:data.instrument.symbol,interval:data.interval,source:data.source,adjustment:data.adjustment,...(live?{asOf:cutoff}:{})}):null,[structureAnalysis,data,structureCandles,live,cutoff]);
   const health=useMemo(()=>getFeedHealth(data,{nowMs:healthClock,lastSuccessAtMs:feedSuccess?.key===selectionKey?feedSuccess.at:undefined,error}),[data,healthClock,feedSuccess,selectionKey,error]);
   const displayForecast=imported||replay!==null||health.allowSignals||health.state==='closed';
   useEffect(()=>{if(live&&data&&rawForecast&&journalReady&&!loading&&!['error','stale','unknown'].includes(health.state))observe(data,rawForecast,health.allowSignals);},[data,rawForecast,live,journalReady,loading,health.state,health.allowSignals,observe]);
