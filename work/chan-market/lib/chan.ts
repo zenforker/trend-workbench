@@ -299,7 +299,8 @@ function core(bars:IndexedCandle[], mode:'new'|'old') {
   const pens=mode==='new'?buildNaturalStrokes(bars):(()=>{const fractals=findFractals(mergeIndexed(bars));return {fractals,strokes:buildPens(fractals,mode)};})();
   // 自然笔 → 自然段 → 本级别趋势 (= higher-level segments); classic pens keep the feature-sequence segments.
   const fractals=pens.fractals,strokes=pens.strokes,segments=mode==='new'?buildNaturalLevel(strokes):buildSegments(strokes),trends=mode==='new'?buildNaturalLevel(segments):[];
-  const {centers,signals}=buildCenters(segments),vacc=computeVacc(bars,VACC_DEFAULTS);
+  // Natural Chan drops classic 中枢 and the 类三买/卖 derived from them (author ruling 2026-11-23).
+  const {centers,signals}=mode==='new'?{centers:[] as Center[],signals:[] as Signal[]}:buildCenters(segments),vacc=computeVacc(bars,VACC_DEFAULTS);
   const current=bars[bars.length-1],last=vacc[vacc.length-1];
   const recent=strokes.filter(x=>x.confirmed).slice(-1)[0];
   const segment=segments.filter(x=>x.confirmed).slice(-1)[0];
@@ -311,7 +312,7 @@ function core(bars:IndexedCandle[], mode:'new'|'old') {
   const momentumBucket=Math.abs(momentum)<0.0001?0:momentum>0?1:-1;
   const strokeDirection=recent?(recent.direction==='up'?1:-1):0;
   const factors:Factor[]=[
-    {name:'中枢位置',value:position*18,detail:center?(position>0?'价格位于最近线段中枢上方':position<0?'价格位于最近线段中枢下方':'价格仍在最近线段中枢内'):'尚无已确认线段中枢'},
+    ...(mode==='new'?[]:[{name:'中枢位置',value:position*18,detail:center?(position>0?'价格位于最近线段中枢上方':position<0?'价格位于最近线段中枢下方':'价格仍在最近线段中枢内'):'尚无已确认线段中枢'}]),
     {name:'线段方向',value:segment?(segment.direction==='up'?12:-12):0,detail:segment?`最近确认线段${segment.direction==='up'?'向上':'向下'}`:'确认线段不足'},
     {name:'最近笔',value:strokeDirection*7,detail:recent?`最近确认笔${recent.direction==='up'?'向上':'向下'}；尾笔不纳入`:'有效笔不足'},
     {name:'VAcc速度',value:Math.round(clamp(momentum*5000,-10,10)),detail:momentumBucket>0?'速度在零轴上方，作辅助观察':momentumBucket<0?'速度在零轴下方，作辅助观察':'速度接近零轴'}
@@ -347,7 +348,7 @@ export function historicalCalibration(candles:Candle[], options:{penMode?:'new'|
   for(let i=0,remaining=n?1000-tenths.reduce((a,b)=>a+b,0):0;i<remaining;i++)tenths[order[i%3]]++;
   return {calibration:{samples:n,up:tenths[0]/10,down:tenths[1]/10,flat:tenths[2]/10,horizon,threshold,
     wilsonLow:n?Math.round(Math.max(0,center-margin)*1000)/10:0,wilsonHigh:n?Math.round(Math.min(1,center+margin)*1000)/10:100,
-    method:`滚动前缀；中枢位置/确认笔方向/VAcc速度符号三维距离≤1；每${horizon}根取一次不重叠样本；${n<20?'样本不足20，仅作描述，不估计未来概率':'历史频率，未完成独立样本外校准'}；区间为上涨频率的95% Wilson区间`,
+    method:`滚动前缀；${mode==='new'?'':'中枢位置/'}确认笔方向/VAcc速度符号${mode==='new'?'二':'三'}维距离≤1；每${horizon}根取一次不重叠样本；${n<20?'样本不足20，仅作描述，不估计未来概率':'历史频率，未完成独立样本外校准'}；区间为上涨频率的95% Wilson区间`,
     asOf:bars.length?new Date(bars[bars.length-1].time*1000).toISOString():''},records,currentState:target};
 }
 

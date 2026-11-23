@@ -38,7 +38,7 @@ test('unclosed extrema cannot change pending watch levels, and closed new lows i
 });
 
 test('active computed center gives boundary observations requiring the first completed lower-level retest',()=>{
-  const candles=waves(500),analysis=analyze(candles),center=analysis.centers.at(-1);
+  const candles=waves(500),analysis=analyze(candles,{penMode:'old'}),center=analysis.centers.at(-1);
   assert.ok(center&&center.status==='active','fixture must produce a computed active center');
   const buy=analysis.tradeSetups.find(s=>s.side==='long')!,sell=analysis.tradeSetups.find(s=>s.side==='short')!;
   assert.equal(buy.kind,'third-buy-watch');assert.equal(sell.kind,'third-sell-watch');
@@ -57,7 +57,7 @@ test('active computed center gives boundary observations requiring the first com
 test('old center whose first return is completed is not relabeled as another future third buy or sell',()=>{
   const candles=waves(1000);
   for(let i=1000;i<1320;i++)candles.push(bar(i,170+(i-1000)*.01+Math.sin(i/7)*9+Math.sin(i/29)*5));
-  const analysis=analyze(candles);
+  const analysis=analyze(candles,{penMode:'old'});
   assert.equal(analysis.centers.at(-1)?.status,'broken');
   assert.deepEqual(analysis.tradeSetups.map(s=>s.kind),['buy-watch','sell-watch']);
   assert.deepEqual(analysis.tradeSetups.map(s=>s.label),['中枢买观察','中枢卖观察']);

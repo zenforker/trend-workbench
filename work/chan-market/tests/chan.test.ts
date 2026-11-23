@@ -108,12 +108,12 @@ test('rounding preserves a zero flat class when directional counts are 1 and 79'
   assert.deepEqual([calibration.up,calibration.down,calibration.flat],[1.3,98.7,0]);
 });
 test('conditional scenarios retest the stated center boundary both inside and outside the range',()=>{
-  const c=waves(1000),base=analyze(c),center=base.centers.at(-1);
+  const c=waves(1000),base=analyze(c,{penMode:'old'}),center=base.centers.at(-1);
   assert.ok(center,'fixture must contain a real computed segment center');
   const readable=(n:number)=>Number(n.toPrecision(6)).toLocaleString('en-US',{maximumFractionDigits:8});
   for(const position of ['below','inside','above'] as const) {
     const price:number=position==='below'?center.low*.75:position==='above'?center.high*1.25:(center.low+center.high)/2;
-    const a=analyze([...c,bar(c.length,price-1,price+1,price)]);
+    const a=analyze([...c,bar(c.length,price-1,price+1,price)],{penMode:'old'});
     const actual=a.centers.at(-1);assert.ok(actual);
     const long=a.scenarios.find(s=>s.side==='long')!,short=a.scenarios.find(s=>s.side==='short')!,range=a.scenarios.find(s=>s.side==='range')!;
     assert.equal(long.points.find(p=>p.offset===(position==='above'?4:8))?.price,actual.high);
@@ -131,4 +131,12 @@ test('empty data is finite, safe, and gives no invented scenario or signal',()=>
   const a=analyze([]);assert.deepEqual(a.scenarios,[]);assert.deepEqual(a.signals,[]);
   assert.equal(a.bias.long,50);assert.equal(a.calibration.samples,0);
   assert.equal(JSON.stringify(a).includes('null'),false);
+});
+
+test('Natural Chan mode has no classic centers, no 类三买/卖 candidates and no 中枢位置 factor',()=>{
+  const a=analyze(waves(1000));
+  assert.deepEqual(a.centers,[]);
+  assert.ok(a.signals.every(s=>!s.type.startsWith('third-')));
+  assert.ok(a.bias.factors.every(f=>f.name!=='中枢位置'));
+  assert.ok(analyze(waves(1000),{penMode:'old'}).centers.length>0,'classic mode keeps its centers for comparison');
 });

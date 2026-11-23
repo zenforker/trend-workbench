@@ -215,6 +215,7 @@ test('new and old pen modes preserve causal, connected centers across left-trunc
     }
     if (candles.length === 12) assert.ok(confirmed.length < 3);
     if (confirmed.length < 3) assert.equal(analysis.centers.length, 0);
-    if (offset === 0) assert.ok(analysis.centers.length > 0);
+    if (penMode === 'new') assert.deepEqual(analysis.centers, [], 'Natural Chan has no classic centers');
+    else if (offset === 0) assert.ok(analysis.centers.length > 0);
   }
 });
