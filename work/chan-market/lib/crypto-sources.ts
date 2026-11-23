@@ -360,7 +360,7 @@ export function createCryptoClient(fetcher: Fetcher = (url,init)=>fetch(url,init
     if(provider==='kraken'&&interval==='1M')warnings.push('月线由Kraken日线按UTC自然月合成，截断首月与缺日历史月已排除，历史长度受日线窗口限制。');
     if((provider==='bitget'||provider==='bybit')&&interval==='1M')warnings.push('使用交易所原生UTC自然月OHLC；当前月未收盘，已排除出已确认结构。历史不与其他交易所拼接。');
     if(candles.length<limit||candles.length<200)warnings.push(`本次仅取得${candles.length}根K线，结构与统计样本可能不足。`);
-    return {instrument:instrument(pair,provider),interval,candles,source:`${labels[provider]} 公共现货行情 · ${pair.providerId}`,asOf:new Date(now()).toISOString(),delayNotice:'交易所公开行情 · 手动刷新取数，非逐笔推送 · 时间为周期开盘时间',adjustment:'原始成交价格，不复权',warnings,availableIntervals:intervals};
+    return {instrument:instrument(pair,provider),interval,candles,source:`${labels[provider]} 公共现货行情 · ${pair.providerId}`,asOf:new Date(now()).toISOString(),delayNotice:'交易所公开行情 · 自动刷新取数，非逐笔推送 · 时间为周期开盘时间',adjustment:'原始成交价格，不复权',warnings,availableIntervals:intervals};
   }
   async function searchCrypto(query:string,signal?:AbortSignal):Promise<Instrument[]> {
     const raw=query.trim().slice(0,60),lower=raw.toLowerCase();

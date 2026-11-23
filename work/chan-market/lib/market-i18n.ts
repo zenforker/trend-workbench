@@ -84,7 +84,7 @@ const phrases: [string,string][] = [
   ['Kraken单周期只提供最近约720根；其最后一根按未收盘处理。','Kraken provides approximately the latest 720 candles per interval. Its last candle is treated as open.'],
   ['月线由Kraken日线按UTC自然月合成，截断首月与缺日历史月已排除，历史长度受日线窗口限制。','Monthly candles are aggregated from Kraken daily OHLC by UTC calendar month. Truncated first months and historical months with missing days are excluded; history is limited by the daily window.'],
   ['使用交易所原生UTC自然月OHLC；当前月未收盘，已排除出已确认结构。历史不与其他交易所拼接。','Uses native exchange OHLC for UTC calendar months. The open current month is excluded from confirmed structures. History is not spliced with other exchanges.'],
-  ['交易所公开行情 · 手动刷新取数，非逐笔推送 · 时间为周期开盘时间','Public exchange data · Refreshed on demand, not tick streaming · Timestamps mark interval start'],
+  ['交易所公开行情 · 自动刷新取数，非逐笔推送 · 时间为周期开盘时间','Public exchange data · Automatically refreshed, not tick streaming · Timestamps mark interval start'],
   ['原始成交价格，不复权','Original trade prices, unadjusted'],
   ['当前无法连接现货目录，请稍后重试。','Spot symbol directories cannot be reached. Please retry later.'],
   ['搜索内容最多60个字符。','Search queries are limited to 60 characters.'],

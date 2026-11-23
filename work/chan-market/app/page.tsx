@@ -110,7 +110,7 @@ function HomeContent(){
   // Synchronize the selected market with the remote feed, cancelling obsolete requests.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(()=>{if(!imported)void fetchData();return()=>{chartFeed.cancel();cancelPendingImport();};},[chartFeed,cancelPendingImport,fetchData,imported]);
-  // No timed auto-refresh: market data reloads only via the refresh button (author request 2026-11-23).
+  useEffect(()=>{if(imported||replay!==null||playing)return;const timer=window.setInterval(()=>{if(!document.hidden)void fetchData(true);},30000);return()=>window.clearInterval(timer);},[fetchData,imported,replay,playing]);
   const replayActive=replay!==null,wasReplaying=useRef(false);
   useEffect(()=>{
     if(replayActive&&!wasReplaying.current)chartFeed.cancel();
